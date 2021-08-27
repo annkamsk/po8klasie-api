@@ -1,0 +1,8 @@
+black
+django
+django-cors-headers
+django-filter
+flake8
+graphene-django
+psycopg2-binary
+whitenoise

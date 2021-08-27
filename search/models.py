@@ -1,54 +1,55 @@
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator, EmailValidator
 from django.db import models
-from django.contrib.postgres.fields import JSONField, IntegerRangeField
+
+from search.subjects import SubjectName, Language
+
+
+class Voivodeship(models.TextChoices):
+    D = "dolnośląskie"
+    C = "kujawsko-pomorskie"
+    L = "lubelskie"
+    F = "lubuskie"
+    E = "łódzkie"
+    K = "małopolskie"
+    W = "mazowieckie"
+    O = "opolskie"
+    R = "podkarpackie"
+    B = "podlaskie"
+    G = "pomorskie"
+    S = "śląskie"
+    T = "świętokrzyskie"
+    N = "warmińsko-mazurskie"
+    P = "wielkopolskie"
+    Z = "zachodniopomorskie"
 
 
 class Address(models.Model):
-    city = models.CharField(max_length=100)
+    voivodeship = models.CharField(max_length=20, choices=Voivodeship.choices)
+    town = models.TextField()
     postcode = models.CharField(
-        max_length=6, validators=[RegexValidator(regex="^\\d\\d-\\d\\d\\d$")]
+        max_length=6,
+        validators=[RegexValidator(regex="^\\d\\d-\\d\\d\\d$")],
+        blank=True,
     )
-    district = models.CharField(max_length=100)
-    street = models.CharField(max_length=100)
-    building_nr = models.CharField(max_length=20)
-    longitude = models.FloatField(null=True)
-    latitude = models.FloatField(null=True)
+    district = models.TextField(blank=True)
+    street = models.TextField(blank=True)
+    building = models.TextField(blank=True)
+    apt = models.TextField(blank=True)
+    lng = models.DecimalField(max_digits=9, decimal_places=6, null=True)
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True)
 
     def __str__(self):
-        return ",".join([self.city, self.district, self.street, self.building_nr])
+        return f"{self.town} {self.street} {self.building} {self.postcode}"
 
 
 class ContactData(models.Model):
-    website = models.CharField(max_length=100, blank=True, default="")
-    phone = models.CharField(max_length=20, blank=True, default="")
-    email = models.CharField(EmailValidator(), max_length=100, blank=True, default="")
+    website = models.TextField(blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.CharField(EmailValidator(), max_length=320, blank=True)
 
     def __str__(self):
-        return ",".join([self.website, self.phone, self.email])
-
-
-class PublicInstitutionData(models.Model):
-    """
-    Institution (pl. placówka) – a bigger entity which school is a part of eg. "Zespół Szkół Zawodowych..."
-    """
-
-    institution_name = models.CharField(max_length=200, blank=True)
-    institution_short_name = models.CharField(max_length=20, blank=True)
-    institution_type = models.CharField(max_length=100, blank=True)
-    institution_nr = models.CharField(max_length=20, blank=True)
-    institution_RSPO = models.CharField(max_length=20, blank=True)
-    institution_regon = models.CharField(max_length=14, blank=True)
-    short_name = models.CharField(max_length=20, blank=True)
-    RSPO = models.CharField(max_length=20, blank=True)
-    regon = models.CharField(max_length=14, blank=True)
-    data = JSONField(default=dict)
-
-    def __str__(self):
-        return self.institution_name
-
-
-class PrivateInstitutionData(models.Model):
-    registration_nr = models.CharField(max_length=20)
+        return f"web: {self.website}, tel: {self.phone}, e-mail: {self.email}"
 
 
 class SchoolType(models.TextChoices):
@@ -63,28 +64,27 @@ class SchoolType(models.TextChoices):
 
 
 class School(models.Model):
-    school_name = models.CharField(max_length=200)
-    # eg. "Batory", "Poniatówka"
-    nickname = models.CharField(max_length=50, blank=True, default="")
-    school_type = models.CharField(max_length=100, choices=SchoolType.choices)
-    student_type = models.CharField(max_length=100, blank=True)
-    is_special_needs_school = models.BooleanField(default=False)
-    address = models.ForeignKey(Address, on_delete=models.CASCADE)
-    contact = models.ForeignKey(ContactData, on_delete=models.CASCADE, null=True)
+    name = models.TextField(unique=True)  # full school name
+    displayed_name = models.TextField(
+        blank=True
+    )  # displayed name with eg. abbreviations
+    type = models.CharField(max_length=100, choices=SchoolType.choices)
+    address = models.ForeignKey(
+        Address, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    contact = models.ForeignKey(
+        ContactData, on_delete=models.SET_NULL, null=True, blank=True
+    )
     is_public = models.BooleanField()
-    public_institution_data = models.ForeignKey(
-        PublicInstitutionData, on_delete=models.SET_NULL, null=True
-    )
-    private_institution_data = models.ForeignKey(
-        PrivateInstitutionData, on_delete=models.SET_NULL, null=True
-    )
-    data = JSONField(default=dict)
+    is_special_needs_school = models.BooleanField(default=False)
+    for_adults = models.BooleanField(default=False)
+    data = models.JSONField(default=dict)
 
     def __str__(self):
-        return self.school_name
+        return self.displayed_name if self.displayed_name else self.name
 
 
-class HighSchoolClassType(models.TextChoices):
+class LOClassType(models.TextChoices):
     O = "O", "ogólnodostępny"
     MS = "MS", "mistrzostwa sportowego"
     D = "D", "dwujęzyczny"
@@ -99,81 +99,39 @@ class HighSchoolClassType(models.TextChoices):
     PW = "PW", "przygotowania wojskowego"
 
 
-class HighSchoolClass(models.Model):
-    type = models.CharField(choices=HighSchoolClassType.choices, max_length=3)
-    name = models.CharField(max_length=200)
+class LOClass(models.Model):
+    type = models.CharField(choices=LOClassType.choices, max_length=3)
+    name = models.TextField()
     school = models.ForeignKey(School, on_delete=models.CASCADE)
-    year = IntegerRangeField()
+    year_start = models.IntegerField()
+    year_end = models.IntegerField()
+    advanced_subjects = models.JSONField(default=list)
+    languages = models.JSONField(default=list)
 
-    def __str__(self):
-        return f"{self.type.label}, {self.name}"
+    def _validate_languages(self):
+        for value in self.languages:
+            Language.from_dict(value)
 
+    def _validate_subjects(self):
+        for value in self.advanced_subjects:
+            if value not in SubjectName.values():
+                raise ValidationError(
+                    f"Value: {value} is not one of: {SubjectName.values()}."
+                )
 
-class LanguageName(models.TextChoices):
-    ANG = "ang", "język angielski"
-    FRA = "fra", "język francuski"
-    HISZ = "hisz", "język hiszpański"
-    NIEM = "niem", "język niemiecki"
-    POR = "por", "język portugalski"
-    ROS = "ros", "język rosyjski"
-    WLO = "wlo", "język włoski"
-    LAT = "antyk", "język łaciński i kultura antyczna"
-    BIA = "język białoruski", "język białoruski"
-    LIT = "język litewski", "język litewski"
-    UKR = "język ukraiński", "język ukraiński"
-    LEM = "język łemkowski", "język łemkowski"
-    KAS = "język kaszubski", "język kaszubski"
+    def clean(self):
+        self._validate_languages()
+        self._validate_subjects()
 
-
-class Language(models.Model):
-    high_school_class = models.ForeignKey(HighSchoolClass, on_delete=models.CASCADE)
-    name = models.CharField(choices=LanguageName.choices, max_length=40)
-    # pierwszy język obcy/drugi język obcy
-    nr = models.IntegerField(choices=[(1, "pierwszy"), (2, "drugi")])
-    is_bilingual = models.BooleanField(default=False)
-    multiple_levels = models.BooleanField(default=False)
-
-    def __str__(self):
-        return ",".join([self.name, self.high_school_class.school.school_name])
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
-class SubjectName(models.TextChoices):
-    BIOL = "biol", "biologia"
-    CHEM = "chem", "chemia"
-    FILOZ = "filoz", "filozofia"
-    FIZ = "fiz", "fizyka"
-    GEOGR = "geogr", "geografia"
-    HIST = "hist", "historia"
-    HMUZ = "h.muz.", "historia muzyki"
-    HSZT = "h.szt.", "historia sztuki"
-    INF = "inf", "informatyka"
-    POL = "pol", "język polski"
-    MAT = "mat", "matematyka"
-    WOS = "wos", "wiedza o społeczeństwie"
-    OBCY = "obcy", "język obcy"
-
-
-class ExtendedSubject(models.Model):
-    high_school_class = models.ForeignKey(HighSchoolClass, on_delete=models.CASCADE)
-    name = models.CharField(
-        choices=SubjectName.choices + LanguageName.choices, max_length=40
-    )
-
-    def __str__(self):
-        return ",".join([self.name, self.high_school_class.school.school_name])
-
-
-class Statistics(models.Model):
-    LAUREAT = -1.0
-    high_school_class = models.ForeignKey(HighSchoolClass, on_delete=models.CASCADE)
-    # tura rekrutacji
-    round = models.IntegerField()
-    # aka próg
+class LOStats(models.Model):
+    lo_class = models.ForeignKey(LOClass, on_delete=models.CASCADE)
+    round = models.IntegerField()  # tura rekrutacji
     points_min = models.FloatField()
     points_max = models.FloatField()
     points_avg = models.FloatField()
-    with_competency_test = models.BooleanField(default=False)
-    only_sports_test = models.BooleanField(default=False)
-
-
-# TODO technika, szkoły sportowe, prywatne
+    with_test = models.BooleanField(default=False)

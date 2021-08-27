@@ -1,0 +1,22 @@
+version: "3.7"
+services:
+
+  db:
+    image: postgres:12.2
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: warsawlo
+      POSTGRES_PASSWORD: warsawlo
+      POSTGRES_DB: warsawlo
+    networks:
+      - warsawlo
+
+networks:
+  warsawlo:
+
+volumes:
+  db-data:
+  media:
